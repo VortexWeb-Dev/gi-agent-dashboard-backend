@@ -6,6 +6,18 @@ spl_autoload_register(function ($class) {
     require __DIR__ . "/src/{$class}.php";
 });
 
+use Helpers\Logger;
+
+require_once __DIR__ . '/helpers/Logger.php';
+
+Logger::logRequest([
+    'method' => $_SERVER['REQUEST_METHOD'],
+    'uri' => $_SERVER['REQUEST_URI'],
+    'query' => $_GET,
+    'body' => file_get_contents('php://input'),
+    'headers' => getallheaders(),
+]);
+
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $parts = array_values(array_filter(explode("/", $uri)));
 
