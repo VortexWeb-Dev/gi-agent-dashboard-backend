@@ -33,6 +33,56 @@ class PerformanceController extends BitrixController
             return;
         }
 
+        $isYearly = isset($_GET['yearly']) && $_GET['yearly'] === 'true';
+
+        if ($isYearly) {
+            $year = date('Y');
+            $currentMonth = (int)date('n');
+
+            // Get user info just once
+            $user = $this->getUserById($id, [
+                'NAME',
+                'LAST_NAME',
+                'WORK_POSITION',
+                'PERSONAL_PHOTO',
+                'EMAIL',
+                'UF_SKYPE_LINK',
+                'UF_ZOOM',
+                'UF_XING',
+                'UF_LINKEDIN',
+                'UF_FACEBOOK',
+                'UF_TWITTER',
+                'UF_SKYPE'
+            ]);
+
+            if (!$user) {
+                $this->response->sendError(404, "User not found");
+                return;
+            }
+
+            $userData = $this->getUserDataArray($user);
+            $yearlyPerformance = [];
+
+            for ($month = 1; $month <= $currentMonth; $month++) {
+                $key = "performance_month_{$id}_{$year}_{$month}";
+                $cached = $this->cache->get($key);
+
+                if ($cached !== false) {
+                    $yearlyPerformance = array_merge($yearlyPerformance, $cached);
+                    continue;
+                }
+
+                $monthData = $this->getMonthlyPerformanceData($id, $month, $year, $user['EMAIL'] ?? '');
+                $this->cache->set($key, $monthData);
+                $yearlyPerformance = array_merge($yearlyPerformance, $monthData);
+            }
+
+            $userData['performance'] = $yearlyPerformance;
+            $this->response->sendSuccess(200, $userData);
+            return;
+        }
+
+        // Default: current month only
         $cacheKey = "performance_" . $id;
         $cached = $this->cache->get($cacheKey);
 
@@ -41,97 +91,137 @@ class PerformanceController extends BitrixController
             return;
         }
 
-        $user = $this->getUserById($id);
+        $user = $this->getUserById($id, [
+            'NAME',
+            'LAST_NAME',
+            'WORK_POSITION',
+            'PERSONAL_PHOTO',
+            'EMAIL',
+            'UF_SKYPE_LINK',
+            'UF_ZOOM',
+            'UF_XING',
+            'UF_LINKEDIN',
+            'UF_FACEBOOK',
+            'UF_TWITTER',
+            'UF_SKYPE'
+        ]);
+
         if (!$user) {
             $this->response->sendError(404, "User not found");
             return;
         }
 
-        $performanceData = $this->getPerformanceData($id);
+        $performanceData = $this->getPerformanceData($id, $user);
 
         $this->cache->set($cacheKey, $performanceData);
         $this->response->sendSuccess(200, $performanceData);
     }
 
-    private function getUserById(string $id): ?array
+    private function getUserById(string $id, array $fields = []): ?array
     {
-        $user = $this->getUser($id);
+        $user = $this->getUser($id, $fields);
         if (!$user) {
             return null;
         }
         return $user;
     }
 
-    private function getPerformanceData(string $id): array
+    private function getUserDataArray(array $user): array
     {
-        $currentMonth = date('F Y');
+        return [
+            'employee' => trim($user['NAME'] . ' ' . $user['LAST_NAME']) ?? '',
+            'role' => $user['WORK_POSITION'] ?? '',
+            'employee_photo' => $user['PERSONAL_PHOTO'] ?? '',
+            'skype' => $user['UF_SKYPE'] ?? '',
+            'skypeChat' => $user['UF_SKYPE_LINK'] ?? '',
+            'zoom' => $user['UF_ZOOM'] ?? '',
+            'xing' => $user['UF_XING'] ?? '',
+            'linkedin' => $user['UF_LINKEDIN'] ?? '',
+            'facebook' => $user['UF_FACEBOOK'] ?? '',
+            'twitter' => $user['UF_TWITTER'] ?? '',
+        ];
+    }
 
-        $user = $this->getUserById($id, ['NAME', 'LAST_NAME', 'WORK_POSITION', 'PERSONAL_PHOTO', 'EMAIL', 'UF_SKYPE_LINK', 'UF_ZOOM', 'UF_XING', 'UF_LINKEDIN', 'UF_FACEBOOK', 'UF_TWITTER', 'UF_SKYPE']);
-        $userName = trim($user['NAME'] . ' ' . $user['LAST_NAME']) ?? '';
-        $userRole = $user['WORK_POSITION'] ?? '';
-        $userPhoto = $user['PERSONAL_PHOTO'] ?? '';
-        $userEmail = $user['EMAIL'] ?? '';
-        $skypeChat = $user['UF_SKYPE_LINK'] ?? '';
-        $zoom = $user['UF_ZOOM'] ?? '';
-        $xing = $user['UF_XING'] ?? '';
-        $linkedin = $user['UF_LINKEDIN'] ?? '';
-        $facebook = $user['UF_FACEBOOK'] ?? '';
-        $twitter = $user['UF_TWITTER'] ?? '';
-        $skype = $user['UF_SKYPE'] ?? '';
+    private function getMonthlyPerformanceData(string $id, int $month, int $year, string $userEmail): array
+    {
+        $date = DateTime::createFromFormat('!m', $month);
+        $monthName = $date->format('F');
 
-        $totalAds = $this->getAllUserAds(['ufCrm37AgentEmail' => $userEmail], ['ufCrm37Status', 'ufCrm37PfEnable', 'ufCrm37BayutEnable', 'ufCrm37DubizzleEnable', 'ufCrm37Price']);
-        $publishedAds = array_filter($totalAds, function ($ad) {
-            return $ad['ufCrm37Status'] === 'PUBLISHED';
-        });
-        $liveAds = array_filter($totalAds, function ($ad) {
-            return $ad['ufCrm37Status'] === 'LIVE';
-        });
-        $draftAds = array_filter($totalAds, function ($ad) {
-            return $ad['ufCrm37Status'] === 'DRAFT';
-        });
+        // Get and filter ads
+        $ads = $this->getAllUserAds(['ufCrm37AgentEmail' => $userEmail], [
+            'ufCrm37Status',
+            'ufCrm37PfEnable',
+            'ufCrm37BayutEnable',
+            'ufCrm37DubizzleEnable',
+            'ufCrm37WebsiteEnable',
+            'ufCrm37Price',
+            'createdTime'
+        ]);
 
-        $pfAds = array_filter($totalAds, function ($ad) {
-            return $ad['ufCrm37PfEnable'] === 'Y' && $ad['ufCrm37Status'] === 'PUBLISHED';
-        });
-        $bayutAds = array_filter($totalAds, function ($ad) {
-            return $ad['ufCrm37BayutEnable'] === 'Y' && $ad['ufCrm37Status'] === 'PUBLISHED';
-        });
-        $dubizzleAds = array_filter($totalAds, function ($ad) {
-            return $ad['ufCrm37DubizzleEnable'] === 'Y' && $ad['ufCrm37Status'] === 'PUBLISHED';
-        });
-        $websiteAds = array_filter($totalAds, function ($ad) {
-            return $ad['ufCrm37WebsiteEnable'] === 'Y' && $ad['ufCrm37Status'] === 'PUBLISHED';
+        // Filter for month/year
+        $ads = array_filter($ads, function ($ad) use ($year, $month) {
+            if (empty($ad['createdTime'])) return false;
+
+            $created = strtotime($ad['createdTime']);
+            return (int)date('Y', $created) === (int)$year && (int)date('n', $created) === (int)$month;
         });
 
-        $totalWorth = array_sum(array_map(function ($ad) {
-            if ($ad['ufCrm37Status'] !== 'PUBLISHED') {
-                return 0;
-            }
+        $published = array_filter($ads, fn($ad) => $ad['ufCrm37Status'] === 'PUBLISHED');
+        $live = array_filter($ads, fn($ad) => $ad['ufCrm37Status'] === 'LIVE');
+        $draft = array_filter($ads, fn($ad) => $ad['ufCrm37Status'] === 'DRAFT');
 
-            return $ad['ufCrm37Price'];
-        }, $totalAds));
+        $pf = array_filter($published, fn($ad) => $ad['ufCrm37PfEnable'] === 'Y');
+        $bayut = array_filter($published, fn($ad) => $ad['ufCrm37BayutEnable'] === 'Y');
+        $dubizzle = array_filter($published, fn($ad) => $ad['ufCrm37DubizzleEnable'] === 'Y');
+        $website = array_filter($published, fn($ad) => $ad['ufCrm37WebsiteEnable'] === 'Y');
+
+        $worth = array_sum(array_map(
+            fn($ad) =>
+            $ad['ufCrm37Status'] === 'PUBLISHED' ? (float)$ad['ufCrm37Price'] : 0,
+            $ads
+        ));
 
         return [
-            'month' => $currentMonth,
-            'role' => $userRole,
-            'employee' => $userName,
-            'employee_photo' => $userPhoto,
-            'skype' => $skype,
-            'skypeChat' => $skypeChat,
-            'zoom' => $zoom,
-            'xing' => $xing,
-            'linkedin' => $linkedin,
-            'facebook' => $facebook,
-            'twitter' => $twitter,
-            'liveAds' => count($liveAds),
-            'totalWorthOfAds' => $totalWorth,
-            'publishedAds' => count($publishedAds),
-            'draftAds' => count($draftAds),
-            'pfAds' => count($pfAds),
-            'bayutAds' => count($bayutAds),
-            'dubizzleAds' => count($dubizzleAds),
-            'websiteAds' => count($websiteAds),
-            'totalAds' => count($totalAds)
+            $monthName => [
+                'liveAds' => count($live),
+                'totalWorthOfAds' => $worth,
+                'publishedAds' => count($published),
+                'draftAds' => count($draft),
+                'pfAds' => count($pf),
+                'bayutAds' => count($bayut),
+                'dubizzleAds' => count($dubizzle),
+                'websiteAds' => count($website),
+                'totalAds' => count($ads)
+            ]
         ];
+    }
+
+    private function getPerformanceData(string $id, array $user = null): array
+    {
+        $year = date('Y');
+        $month = (int)date('n'); // Current month
+
+        if ($user === null) {
+            $user = $this->getUserById($id, [
+                'NAME',
+                'LAST_NAME',
+                'WORK_POSITION',
+                'PERSONAL_PHOTO',
+                'EMAIL',
+                'UF_SKYPE_LINK',
+                'UF_ZOOM',
+                'UF_XING',
+                'UF_LINKEDIN',
+                'UF_FACEBOOK',
+                'UF_TWITTER',
+                'UF_SKYPE'
+            ]);
+        }
+
+        $userData = $this->getUserDataArray($user);
+        $monthlyData = $this->getMonthlyPerformanceData($id, $month, $year, $user['EMAIL'] ?? '');
+        $userData['performance'] = $monthlyData;
+
+        return $userData;
     }
 }
