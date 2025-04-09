@@ -66,11 +66,18 @@ class PerformanceController extends BitrixController
     {
         $currentMonth = date('F Y');
 
-        $user = $this->getUserById($id);
+        $user = $this->getUserById($id, ['NAME', 'LAST_NAME', 'WORK_POSITION', 'PERSONAL_PHOTO', 'EMAIL', 'UF_SKYPE_LINK', 'UF_ZOOM', 'UF_XING', 'UF_LINKEDIN', 'UF_FACEBOOK', 'UF_TWITTER', 'UF_SKYPE']);
         $userName = trim($user['NAME'] . ' ' . $user['LAST_NAME']) ?? '';
         $userRole = $user['WORK_POSITION'] ?? '';
         $userPhoto = $user['PERSONAL_PHOTO'] ?? '';
         $userEmail = $user['EMAIL'] ?? '';
+        $skypeChat = $user['UF_SKYPE_LINK'] ?? '';
+        $zoom = $user['UF_ZOOM'] ?? '';
+        $xing = $user['UF_XING'] ?? '';
+        $linkedin = $user['UF_LINKEDIN'] ?? '';
+        $facebook = $user['UF_FACEBOOK'] ?? '';
+        $twitter = $user['UF_TWITTER'] ?? '';
+        $skype = $user['UF_SKYPE'] ?? '';
 
         $totalAds = $this->getAllUserAds(['ufCrm37AgentEmail' => $userEmail], ['ufCrm37Status', 'ufCrm37PfEnable', 'ufCrm37BayutEnable', 'ufCrm37DubizzleEnable', 'ufCrm37Price']);
         $publishedAds = array_filter($totalAds, function ($ad) {
@@ -109,6 +116,13 @@ class PerformanceController extends BitrixController
             'role' => $userRole,
             'employee' => $userName,
             'employee_photo' => $userPhoto,
+            'skype' => $skype,
+            'skypeChat' => $skypeChat,
+            'zoom' => $zoom,
+            'xing' => $xing,
+            'linkedin' => $linkedin,
+            'facebook' => $facebook,
+            'twitter' => $twitter,
             'liveAds' => count($liveAds),
             'totalWorthOfAds' => $totalWorth,
             'publishedAds' => count($publishedAds),

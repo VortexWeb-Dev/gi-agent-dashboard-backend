@@ -36,9 +36,9 @@ class BitrixController
         return $allDeals ?: null;
     }
 
-    public function getUser(int $id): ?array
+    public function getUser(int $id, array $select = []): ?array
     {
-        $result = CRest::call('user.get', ['ID' => $id]);
+        $result = CRest::call('user.get', ['ID' => $id, 'select' => $select]);
         return $result['result'][0] ?? null;
     }
 
