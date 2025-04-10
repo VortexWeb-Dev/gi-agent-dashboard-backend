@@ -4,6 +4,10 @@ require_once __DIR__ . "/../services/CacheService.php";
 require_once __DIR__ . "/../services/ResponseService.php";
 require_once __DIR__ . "/BitrixController.php";
 
+// Enable error reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
 class PerformanceController extends BitrixController
 {
     private CacheService $cache;
@@ -147,7 +151,11 @@ class PerformanceController extends BitrixController
         $date = DateTime::createFromFormat('!m', $month);
         $monthName = $date->format('F');
 
-        // Get and filter ads
+        // Build date range for the month
+        $startDate = (new DateTime("$year-$month-01"))->format('Y-m-d');
+        $endDate = (new DateTime("$year-$month-01"))->modify('last day of this month')->format('Y-m-d');
+
+        // Filter ads based on creation time (Bitrix does not support date filtering on custom fields directly)
         $ads = $this->getAllUserAds(['ufCrm37AgentEmail' => $userEmail], [
             'ufCrm37Status',
             'ufCrm37PfEnable',
@@ -157,15 +165,26 @@ class PerformanceController extends BitrixController
             'ufCrm37Price',
             'createdTime'
         ]);
-
-        // Filter for month/year
-        $ads = array_filter($ads, function ($ad) use ($year, $month) {
+        $ads = array_filter($ads, function ($ad) use ($startDate, $endDate) {
             if (empty($ad['createdTime'])) return false;
-
             $created = strtotime($ad['createdTime']);
-            return (int)date('Y', $created) === (int)$year && (int)date('n', $created) === (int)$month;
+            return $created >= strtotime($startDate) && $created <= strtotime($endDate);
         });
 
+        // Deals with CLOSEDATE in this month
+        $deals = $this->getDeals([
+            'ASSIGNED_BY_ID' => $id,
+            '>=CLOSEDATE' => $startDate,
+            '<=CLOSEDATE' => $endDate
+        ], ['ID', 'CLOSEDATE', 'OPPORTUNITY', 'STAGE_ID', 'UF_CRM_1591696089203', 'CLOSED']);
+
+        // Deals without updates for over 14 days
+        $dealsWithoutUpdates = array_filter($deals, function ($deal) {
+            if (empty($deal['LAST_ACTIVITY_DATE'])) return true;
+            return (time() - strtotime($deal['LAST_ACTIVITY_DATE'])) > 14 * 24 * 60 * 60;
+        });
+
+        // Ad categorization
         $published = array_filter($ads, fn($ad) => $ad['ufCrm37Status'] === 'PUBLISHED');
         $live = array_filter($ads, fn($ad) => $ad['ufCrm37Status'] === 'LIVE');
         $draft = array_filter($ads, fn($ad) => $ad['ufCrm37Status'] === 'DRAFT');
@@ -176,10 +195,26 @@ class PerformanceController extends BitrixController
         $website = array_filter($published, fn($ad) => $ad['ufCrm37WebsiteEnable'] === 'Y');
 
         $worth = array_sum(array_map(
-            fn($ad) =>
-            $ad['ufCrm37Status'] === 'PUBLISHED' ? (float)$ad['ufCrm37Price'] : 0,
-            $ads
+            fn($ad) => (float)$ad['ufCrm37Price'],
+            $published
         ));
+
+        // Deal categorization
+        $closedDeals = array_filter($deals, fn($deal) => str_starts_with($deal['STAGE_ID'], 'WON') || $deal['CLOSED'] === 'Y');
+        $activeDeals = array_filter(
+            $deals,
+            fn($deal) =>
+            in_array($deal['STAGE_ID'], ['NEW', 'PREPARATION', 'IN_PROGRESS', 'FINAL_INVOICE'])
+        );
+        $unassignedDeals = array_filter(
+            $deals,
+            fn($deal) =>
+            in_array($deal['STAGE_ID'], ['NEW'])
+        );
+        $meetingsArranged = array_filter($deals, fn($deal) => in_array($deal['STAGE_ID'], ['UC_9QFUT2']));
+
+        $monthlyEarnings = array_sum(array_map(fn($deal) => (float)$deal['OPPORTUNITY'], $closedDeals));
+        $grossCommission = array_sum(array_map(fn($deal) => (float)$deal['UF_CRM_1591696089203'], $closedDeals));
 
         return [
             $monthName => [
@@ -191,7 +226,15 @@ class PerformanceController extends BitrixController
                 'bayutAds' => count($bayut),
                 'dubizzleAds' => count($dubizzle),
                 'websiteAds' => count($website),
-                'totalAds' => count($ads)
+                'totalAds' => count($ads),
+
+                'closedDeals' => count($closedDeals),
+                'activeDeals' => count($activeDeals),
+                'unassignedDeals' => count($unassignedDeals),
+                'dealsWithoutUpdates' => count($dealsWithoutUpdates),
+                'meetingsArranged' => count($meetingsArranged),
+                'monthlyEarnings' => round($monthlyEarnings, 2),
+                'grossCommission' => round($grossCommission, 2)
             ]
         ];
     }

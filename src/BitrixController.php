@@ -36,6 +36,31 @@ class BitrixController
         return $allDeals ?: null;
     }
 
+    public function getLeads(array $filter = [], array $select = []): ?array
+    {
+        $allLeads = [];
+        $start = 0;
+
+        do {
+            $params = [
+                'filter' => $filter,
+                'select' => $select,
+                'start' => $start
+            ];
+
+            $response = CRest::call('crm.lead.list', $params);
+
+            if (!isset($response['result'])) {
+                break;
+            }
+
+            $allLeads = array_merge($allLeads, $response['result']);
+            $start = $response['next'] ?? null;
+        } while ($start !== null);
+
+        return $allLeads ?: [];
+    }
+
     public function getUser(int $id, array $select = []): ?array
     {
         $result = CRest::call('user.get', ['ID' => $id, 'select' => $select]);
