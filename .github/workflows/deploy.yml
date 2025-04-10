@@ -11,22 +11,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Set up SSH key
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          chmod 700 ~/.ssh
-          ssh-keyscan -H 65.0.106.160 >> ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-
-      - name: Debug SSH connection
-        run: ssh -v ubuntu@65.0.106.160 "echo SSH connection successful"
-
-      - name: Deploy code via SSH
-        run: |
-          ssh ubuntu@65.0.106.160 << 'EOF'
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@master
+        with:
+          host: 65.0.106.160
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
             cd /var/www/html/agent-dashboard-backend
             sudo git pull
             echo "Deployment completed"
-          EOF
