@@ -23,14 +23,38 @@ class BitrixAuthController
             return;
         }
 
-        $grant_type = $_POST['grant_type'] ?? null;
-        $client_id = $_POST['client_id'] ?? null;
-        $client_secret = $_POST['client_secret'] ?? null;
-        $code = $_POST['code'] ?? null;
-        $redirect_uri = $_POST['redirect_uri'] ?? null;
+        $contentType = $_SERVER["CONTENT_TYPE"] ?? '';
 
-        if (!$grant_type || !$client_id || !$client_secret || !$code || !$redirect_uri) {
-            $this->response->sendError(400, "Missing required parameters.");
+        $grant_type = $client_id = $client_secret = $code = $redirect_uri = null;
+
+        if (stripos($contentType, 'application/json') !== false) {
+            // Handle JSON body
+            $input = json_decode(file_get_contents('php://input'), true);
+
+            $grant_type    = $input['grant_type'] ?? null;
+            $client_id     = $input['client_id'] ?? null;
+            $client_secret = $input['client_secret'] ?? null;
+            $code          = $input['code'] ?? null;
+            $redirect_uri  = $input['redirect_uri'] ?? null;
+        } else {
+            // Handle form-urlencoded (default behavior)
+            $grant_type    = $_POST['grant_type'] ?? null;
+            $client_id     = $_POST['client_id'] ?? null;
+            $client_secret = $_POST['client_secret'] ?? null;
+            $code          = $_POST['code'] ?? null;
+            $redirect_uri  = $_POST['redirect_uri'] ?? null;
+        }
+
+        $missing = [];
+
+        if (!$grant_type) $missing[] = 'grant_type';
+        if (!$client_id) $missing[] = 'client_id';
+        if (!$client_secret) $missing[] = 'client_secret';
+        if (!$code) $missing[] = 'code';
+        if (!$redirect_uri) $missing[] = 'redirect_uri';
+
+        if (!empty($missing)) {
+            $this->response->sendError(400, "Missing required parameters: " . implode(', ', $missing));
             return;
         }
 
